@@ -192,7 +192,7 @@ def handle_command(sp, args, completer, favs, cmds,dev_id):
             if artist.type == 'artist':
                 completer = CommandCompleter(artist.name)
                 cmd = { artist.name: artist.uri }
-                cmd.add(cmd)
+                cmds.add(cmd)
         
     elif command == 'albums':
         for album in favs:
@@ -239,7 +239,6 @@ def handle_command(sp, args, completer, favs, cmds,dev_id):
 
 
 def main():
-    
     # Create argument parser
     # parser = argparse.ArgumentParser(description="control spotify")
     # parser.add_argument('command', help="Command to run", choices=COMMANDS)
