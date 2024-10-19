@@ -5,7 +5,7 @@ import yaml
 import readline
 import argparse
 
-COMMANDS = ['play', 'pause', 'next', 'previous', 'podcasts', 'playlists', 'artists', 'albums', 'exit']
+COMMANDS = ['play', 'pause', 'next', 'previous', 'podcasts', 'playlists', 'artists', 'albums', 'search', 'exit']
 
 # FAQ: finding spotify URI's and ID's
 # https://developer.spotify.com/documentation/web-api/concepts/spotify-uris-ids
@@ -52,6 +52,7 @@ class SpotifyConfig:
     client_secret: str
     redirect_uri: str
     scope: str
+    device_name: str
 
 @dataclass
 class Favourite:
@@ -59,7 +60,6 @@ class Favourite:
     type: str
     uri: str
     external_url: str
-
 
 def load_config():
     favs = []
@@ -75,17 +75,33 @@ def load_config():
         client_secret = config['spotify']['client_secret']
         redirect_uri = config['spotify']['redirect_uri']
         scope = config['spotify']['scope']
+        device_name = config['spotify']['device_name']
 
         cfg = SpotifyConfig(client_id=client_id, 
                             client_secret=client_secret, 
                             redirect_uri=redirect_uri, 
-                            scope=scope)
+                            scope=scope,
+                            device_name=device_name)
+        
+        if 'podcasts' in config:
+            for podcast in config['podcasts']:
+                name = podcast
+                uri = config['podcasts'][podcast]
+                fav = Favourite(name=name, type='podcast', uri=uri, external_url='unknown')
+                favs.append(fav)
+        if 'artists' in config:
+            for artist in config['artists']:
+                name = artist
+                uri = config['artists'][artist]
+                fav = Favourite(name=name, type='artist', uri=uri, external_url='unknown')
+                favs.append(fav)
 
-        for podcast in config['podcasts']:
-            name = podcast
-            uri = config['podcasts'][podcast]
-            fav = Favourite(name=name, type='podcast', uri=uri, external_url='unknown')
-            favs.append(fav)
+        if 'albums' in config:
+            for album in config['albums']:
+                name = album
+                uri = config['albums'][album]
+                fav = Favourite(name=name, type='album', uri=uri, external_url='unknown')
+                favs.append(fav)
         
         return cfg, favs
 
@@ -93,77 +109,140 @@ def load_config():
         print(f"Error loading config: {e}")
         return None,None
 
-def connect(cfg: SpotifyConfig) -> spotipy.Spotify:
+def init(cfg: SpotifyConfig) -> spotipy.Spotify:
     try:
         # TODO: remove this and use the client credentials flow
         sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=cfg.client_id,
                                     client_secret=cfg.client_secret,
                                     redirect_uri=cfg.redirect_uri, 
-                                    scope=cfg.scope))
+                                    scope="user-library-read"),
+                    client_credentials_manager=SpotifyOAuth(client_id=cfg.client_id,
+                                    client_secret=cfg.client_secret,
+                                    redirect_uri=cfg.redirect_uri, 
+                                    scope="user-read-playback-state,user-modify-playback-state"))
+    
         return sp
     except Exception as e:
         print(f"Error connecting to Spotify: {e}")
         return None
 
-def get_current_user_playlist(sp):
+def find_device_id(sp: spotipy.Spotify, device_name):
+    """ Find the device id by name
+    """
+    devices = sp.devices()
+    for device in devices['devices']:
+        if device['name'] == device_name:
+            return device['id']
+    
+    print(f"Device {device_name} not found")
+    return None
+
+def get_current_user_playlists(sp):
     playlists = sp.current_user_playlists()
     for i, item in enumerate(playlists['items']):
         print("%d %s" % (i, item['name']))
         
-def play(sp: spotipy.Spotify):
-    sp.start_playback() 
+def play(sp: spotipy.Spotify, dev_id, uri):
+    # sp.start_playback(uris=[uri]) 
+    sp.start_playback(device_id=dev_id, context_uri=uri)
 
-def pause(sp: spotipy.Spotify): 
-    sp.pause_playback()
+def pause(sp: spotipy.Spotify, dev_id): 
+    sp.pause_playback(device_id=dev_id)
 
-def next(sp: spotipy.Spotify):
-    sp.next_track()
+def next(sp: spotipy.Spotify, dev_id):
+    sp.next_track(device_id=dev_id)
 
-def previous(sp: spotipy.Spotify):  
-    sp.previous_track()
+def previous(sp: spotipy.Spotify, dev_id):  
+    sp.previous_track(device_id=dev_id)
 
-def handle_command(sp, command, completer, favs, cmds):
+def search_uri_by_name(sp, name, type='show', limit=1):
+    # soptify uses 'show' instead of 'podcast'
+    type = 'show' if type == 'podcast' else type
+    return sp.search(q=name, limit=limit, type=type)
     
+def handle_command(sp, args, completer, favs, cmds,dev_id):
+    command = args[0]
+
     if command == 'play':
-        play(sp)
+        play(sp,dev_id)
     elif command == 'pause':
-        pause(sp)
+        pause(sp,dev_id)
     elif command == 'next':
-        next(sp)
+        next(sp, dev_id)
     elif command == 'previous':
-        previous(sp)
+        previous(sp, dev_id)
     elif command == 'podcasts':        
         # add the podcasts to the completer
         completer.clear_commands()
         for fav in favs:
             if fav.type == 'podcast':
-                    # update the completer 
-                    completer.update_commands(fav.name) 
-                    cmd = { fav.name: fav.uri }
-                    # update the command
-                    cmds.add(cmd)
+                # update the completer 
+                completer.update_commands(fav.name) 
+                cmd = { fav.name: fav.uri }
+                # update the command
+                cmds.add(cmd)
                     
     elif command == 'playlists':
-        get_current_user_playlist(sp)
+        playlists = get_current_user_playlists(sp)
+        for i, item in enumerate(playlists['items']):
+            print("%d %s" % (i, item['name']))
+
     elif command == 'artists':
-        print("Artists")
+        for artist in favs:
+            if artist.type == 'artist':
+                completer = CommandCompleter(artist.name)
+                cmd = { artist.name: artist.uri }
+                cmd.add(cmd)
+        
     elif command == 'albums':
-        print("Albums")
+        for album in favs:
+            if album.type == 'album':
+                completer = CommandCompleter(album.name)
+                cmd = { album.name: album.uri }
+                cmds.add(cmd)
+
+    elif command == 'search':
+        # concat the search string
+        search = ' '.join(args[1:])
+        result = search_uri_by_name(sp, search, 'artist,track,album,episode,show')        
+
+        print(f"Artists") if result['artists']['items'] else None    
+        for item in result['artists' ]['items']:
+            print('\t ' + item['name'] + ' - ' + item['uri'])
+            
+        print(f"Albums") if result['albums']['items'] else None
+        for item in result['albums' ]['items']:
+            print('\t ' + item['name'] + ' - ' + item['uri'])            
+        
+        print(f"Tracks") if result['tracks']['items'] else None
+        for item in result['tracks' ]['items']:
+            print('\t ' + item['name'] + ' - ' + item['uri'])
+        
+        print(f"Shows") if result['shows']['items'] else None
+        for item in result['shows' ]['items']:
+            print('\t ' + item['name'] + ' - ' + item['uri'])
+        
+        print(f"Episodes") if result['episodes']['items'] else None
+        for item in result['episodes' ]['items']:
+            print('\t ' + item['name'] + ' - ' + item['uri'])
+
     elif command == 'exit':
         print("Exiting...")
     else:
+        # got through the dynamic-added-commands
         for cmd in cmds.get():
             if command in cmd:
                 print(f"Playing {command}")
                 completer.reset_commands()
+                play(sp, dev_id, uri=cmd[command])
                 break
 
 
 def main():
     
     # Create argument parser
-    parser = argparse.ArgumentParser(description="CLI with autocomplete")
-    parser.add_argument('command', help="Command to run", choices=COMMANDS)
+    # parser = argparse.ArgumentParser(description="control spotify")
+    # parser.add_argument('command', help="Command to run", choices=COMMANDS)
     
     # Configure readline to use the completer function    
     # for nix    
@@ -172,15 +251,17 @@ def main():
     readline.parse_and_bind ("bind ^I rl_complete")
     readline.set_completer_delims(' \t\n')
     
-
     completer = CommandCompleter(COMMANDS)
     readline.set_completer(completer.complete)
 
-
     config, favs = load_config()
 
-    sp = connect(config)
+    sp = init(config)
     if (sp is None):
+        return
+    
+    dev_id = find_device_id(sp, config.device_name)
+    if (dev_id is None):
         return
     
     cmds = Commands()
@@ -201,8 +282,7 @@ def main():
             
             # Parse the user input using argparse
             if args:
-                parsed_args = parser.parse_args(args)
-                handle_command(sp, parsed_args.command, completer, favs, cmds)
+                handle_command(sp, args, completer, favs, cmds, dev_id)
         
         except KeyboardInterrupt:
             print("\nExiting...")
