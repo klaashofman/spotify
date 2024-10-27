@@ -3,6 +3,7 @@ import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import yaml
 import readline
+import pyperclip
 import argparse
 import pprint
 
@@ -86,7 +87,7 @@ class SpotiCli:
                                         redirect_uri=self.cfg.redirect_uri, 
                                         scope="user-read-playback-state,user-modify-playback-state"))
             
-            pprint.pprint(self.sp.devices())
+            # pprint.pprint(self.sp.devices())
         
         except Exception as e:
             print(f"Error connecting to Spotify: {e}")
@@ -177,6 +178,8 @@ class SpotiCli:
         command = args[0]
 
         if command == 'play':
+            if pyperclip.paste() != '':
+                self.current_uri = pyperclip.paste()
             self.play(self.dev_id, self.current_uri)
         elif command == 'pause':
             self.pause(self.dev_id)
@@ -214,28 +217,39 @@ class SpotiCli:
 
         elif command == 'search':
             # concat the search string
-            search = ' '.join(args[1:])
+            category  = args[1]
+            search = ' '.join(args[2:])
             result = self.search_uri_by_name(search, 'artist,track,album,episode,show')        
 
-            print(f"Artists") if result['artists']['items'] else None    
-            for item in result['artists' ]['items']:
-                print('\t ' + item['name'] + ' - ' + item['uri'])
-                
-            print(f"Albums") if result['albums']['items'] else None
-            for item in result['albums' ]['items']:
-                print('\t ' + item['name'] + ' - ' + item['uri'])            
+            if category == 'artist':
+                print(f"Artists") if result['artists']['items'] else None    
+                for item in result['artists' ]['items']:
+                    print('\t ' + item['name'] + ' - ' + item['uri'])
+                    pyperclip.copy(item['uri'])
+                    
+            if category == 'album':
+                print(f"Albums") if result['albums']['items'] else None
+                for item in result['albums' ]['items']:
+                    print('\t ' + item['name'] + ' - ' + item['uri'])            
+                    pyperclip.copy(item['uri'])
+
+            if category == 'track':
+                print(f"Tracks") if result['tracks']['items'] else None
+                for item in result['tracks' ]['items']:
+                    print('\t ' + item['name'] + ' - ' + item['uri'])
+                    pyperclip.copy(item['uri'])
             
-            print(f"Tracks") if result['tracks']['items'] else None
-            for item in result['tracks' ]['items']:
-                print('\t ' + item['name'] + ' - ' + item['uri'])
+            if category == 'show' or category == 'podcast':
+                print(f"Shows") if result['shows']['items'] else None
+                for item in result['shows' ]['items']:
+                    print('\t ' + item['name'] + ' - ' + item['uri'])
+                    pyperclip.copy(item['uri'])
             
-            print(f"Shows") if result['shows']['items'] else None
-            for item in result['shows' ]['items']:
-                print('\t ' + item['name'] + ' - ' + item['uri'])
-            
-            print(f"Episodes") if result['episodes']['items'] else None
-            for item in result['episodes' ]['items']:
-                print('\t ' + item['name'] + ' - ' + item['uri'])
+            if category == 'episode':
+                print(f"Episodes") if result['episodes']['items'] else None
+                for item in result['episodes' ]['items']:
+                    print('\t ' + item['name'] + ' - ' + item['uri'])
+                    pyperclip.copy(item['uri'])
 
         elif command == 'exit':
             print("Exiting...")
@@ -277,7 +291,7 @@ def main():
     while True:
         try:                        
             # Prompt user input
-            user_input = input("spotify-cli> ")
+            user_input = input("spoticli> ")
             
             # Split the input into a command and its arguments (if any)
             args = user_input.split()
