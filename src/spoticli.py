@@ -4,52 +4,13 @@ from spotipy.oauth2 import SpotifyOAuth
 import yaml
 import readline
 import pyperclip
-import argparse
-import pprint
+import questionary
+from questionary import prompt, Validator, ValidationError
+from prompt_toolkit import prompt
 
 
 # FAQ: finding spotify URI's and ID's
 # https://developer.spotify.com/documentation/web-api/concepts/spotify-uris-ids
-
-class CommandCompleter:
-    commands = []
-
-    def __init__(self, commands):
-        self.commands = commands
-        self.init = self.commands
-
-    def update_commands(self, commands):
-        # self.commands.append(commands)
-        # put the added commands at the beginning
-        self.commands.insert(0, commands)
-
-    def clear_commands(self):
-        # self.commands.clear()
-        pass
-
-    def reset_commands(self):
-        # self.commands = self.init
-        pass
-    
-    def complete(self, text, state):
-        options = [cmd for cmd in self.commands if cmd.startswith(text)] + [None]
-        return options[state]
-
-class Commands:
-    def __init__(self):
-        self.commands = []
-
-    def add(self, command):
-        self.commands.append(command)
-
-    def remove(self, command):
-        self.commands.remove(command)
-
-    def get(self):
-        return self.commands
-
-    def reset(self):
-        self.commands = []
 
 @dataclass
 class SpotifyConfig:
@@ -62,11 +23,12 @@ class SpotifyConfig:
 @dataclass
 class Favourite:
     name: str
+    description: str
     type: str
     uri: str
     external_url: str
 
-class SpotiCli:
+class Spoticli:
 
     favs = []
     cfg: SpotifyConfig
@@ -119,20 +81,20 @@ class SpotiCli:
                 for podcast in config['podcasts']:
                     name = podcast
                     uri = config['podcasts'][podcast]
-                    fav = Favourite(name=name, type='podcast', uri=uri, external_url='unknown')
+                    fav = Favourite(name=name, type='podcast', uri=uri, external_url='unknown', description='')
                     self.favs.append(fav)
             if 'artists' in config:
                 for artist in config['artists']:
                     name = artist
                     uri = config['artists'][artist]
-                    fav = Favourite(name=name, type='artist', uri=uri, external_url='unknown')
+                    fav = Favourite(name=name, type='artist', uri=uri, external_url='unknown', description='')
                     self.favs.append(fav)
 
             if 'albums' in config:
                 for album in config['albums']:
                     name = album
                     uri = config['albums'][album]
-                    fav = Favourite(name=name, type='album', uri=uri, external_url='unknown')
+                    fav = Favourite(name=name, type='album', uri=uri, external_url='unknown', description='')
                     self.favs.append(fav)
 
         except KeyError as e:
@@ -150,6 +112,33 @@ class SpotiCli:
         
         print(f"Device {device_name} not found")
         return None
+    
+    def load_user_playlists(self):
+        playlists = self.sp.current_user_playlists()
+        for i, item in enumerate(playlists['items']):
+            fav = Favourite(name=item['name'], type='playlist', uri=item['uri'], external_url=item['external_urls']['spotify'], description='')
+            self.favs.append(fav)
+        albums = self.get_current_user_saved_albums()
+        for i, item in enumerate(albums['items']):
+            fav = Favourite(name=item['album']['name'], type='album', uri=item['album']['uri'], external_url=item['album']['external_urls']['spotify'], description='')
+            self.favs.append(fav)
+        podcasts = self.get_current_user_saved_shows()
+        for i, item in enumerate(podcasts['items']):
+            fav = Favourite(name=item['show']['name'], type='podcast', uri=item['show']['uri'], external_url=item['show']['external_urls']['spotify'], description=item['show']['description'])
+            self.favs.append(fav)
+        
+
+    def get_current_user_saved_albums(self, lmit=10):
+        return self.sp.current_user_saved_albums(limit=lmit)
+    
+    def get_current_user_saved_tracks(self, lmit=10):
+        return self.sp.current_user_saved_tracks(limit=lmit)
+    
+    def get_current_user_saved_shows(self, lmit=10):
+        return self.sp.current_user_saved_shows(limit=lmit)
+    
+    def get_current_user_saved_episodes(self, lmit=10):
+        return self.sp.current_user_saved_episodes(limit=lmit)
 
     def get_current_user_playlists(self):
         playlists = self.sp.current_user_playlists()
@@ -174,7 +163,7 @@ class SpotiCli:
         type = 'show' if type == 'podcast' else type
         return self.sp.search(q=name, limit=limit, type=type)
     
-    def handle_command(self, args, completer, cmds):
+    def handle_command(self, args):
         command = args[0]
 
         if command == 'play':
@@ -186,34 +175,11 @@ class SpotiCli:
         elif command == 'next':
             self.next(self.dev_id)
         elif command == 'previous':
-            self.previous(self.dev_id)
-        elif command == 'podcasts':        
-            for fav in self.favs:
-                if fav.type == 'podcast':
-                    # update the completer 
-                    completer.update_commands(fav.name) 
-                    cmd = { fav.name: fav.uri }
-                    # update the command
-                    cmds.add(cmd)
-                        
+            self.previous(self.dev_id)                        
         elif command == 'playlists':
             playlists = self.get_current_user_playlists()
             for i, item in enumerate(playlists['items']):
                 print("%d %s" % (i, item['name']))
-
-        elif command == 'artists':
-            for artist in self.favs:
-                if artist.type == 'artist':
-                    completer.update_commands(artist.name)
-                    cmd = { artist.name: artist.uri }
-                    cmds.add(cmd)
-            
-        elif command == 'albums':
-            for album in self.favs:
-                if album.type == 'album':
-                    completer.update_commands(album.name)
-                    cmd = { album.name: album.uri }
-                    cmds.add(cmd)
 
         elif command == 'search':
             # concat the search string
@@ -251,66 +217,105 @@ class SpotiCli:
                     print('\t ' + item['name'] + ' - ' + item['uri'])
                     pyperclip.copy(item['uri'])
 
-        elif command == 'exit':
-            print("Exiting...")
-        else:
-            # got through the dynamic-added-commands
-            for cmd in cmds.get():
-                if command in cmd:
-                    print(f"Playing {command}")
-                    uri = cmd[command]
-                    self.play(self.dev_id, uri)
-                    self.current_uri = uri
-                    break
+def ask_root_command(**kwargs):
+    question = questionary.autocomplete(
+        "Spotify-cli>",
+        validate=None,
+        meta_information=  {
+                "podcats": "select and play your favorite podcats",
+                "playlists": "select and play your favorite playlists",
+                "artists": "select and play your favorite artists",
+                "albums": "select and play your favorite albums",
+                "search": "search for your favorite songs",
+                "play": "play the current song",
+                "pause": "pause the current song",
+                "previous": "play the previous song",
+                "next": "play the next song",
+            },
+        choices=[
+            "podcats",
+            "playlists",
+            "artists",
+            "albums",
+            "search",
+            "play",
+            "pause",
+            "previous",
+            "next",
+        ],
+        ignore_case=False,
+        style=None,
+        **kwargs,
+    )    
+    return question
 
+def ask_podcast_command(choices, **kwargs):
+    question = questionary.autocomplete(
+        "Select a f{}",
+        validate=None,
+        choices=choices,
+        ignore_case=False,
+        style=None,
+        **kwargs,
+    )    
+    return question
 
 def main():
-    # Create argument parser
-    # parser = argparse.ArgumentParser(description="control spotify")
-    # parser.add_argument('command', help="Command to run", choices=COMMANDS)
     
-    # Configure readline to use the completer function    
-    # for nix    
-    # for macosx: 
-    # readline.parse_and_bind("tab complete")
-    readline.parse_and_bind ("bind ^I rl_complete")
-    readline.set_completer_delims(' \t\n')
+    spoticli = Spoticli()
     
-    COMMANDS = ['play', 'pause', 'next', 'previous', 'podcasts', 'playlists', 'artists', 'albums', 'search', 'exit']
-    completer = CommandCompleter(COMMANDS)
-    readline.set_completer(completer.complete)
+    if spoticli.find_device_id(spoticli.cfg.device_name) is None:
+        return    
 
-    spotiCli = SpotiCli()
-    
-    if spotiCli.find_device_id(spotiCli.cfg.device_name) is None:
-        return
-        
-    cmds = Commands()
+    spoticli.load_user_playlists()
 
-    # Get input from the user
     while True:
-        try:                        
-            # Prompt user input
-            user_input = input("spoticli> ")
-            
-            # Split the input into a command and its arguments (if any)
-            args = user_input.split()
-            
-            # If user types 'exit', break the loop
-            if user_input.strip() == 'exit':
-                print("Exiting...")
-                break
-            
-            # Parse the user input using argparse
-            if args:
-                spotiCli.handle_command(args, completer, cmds)
-        
-        except KeyboardInterrupt:
-            print("\nExiting...")
+        cmd = ask_root_command().ask()
+        if cmd == 'exit':
             break
-        except SystemExit:
-            # This is raised by argparse when there's a parsing error
-            pass
+        if cmd == 'podcats':
+            choices = [ fav.name for fav in spoticli.favs if fav.type == 'podcast' ]
+            choices.append('exit')
+            description = [ fav.description for fav in spoticli.favs if fav.type == 'podcast' ]
+            podcast = questionary.select("Select a podcast", choices=choices, ).ask()
+            if podcast == 'exit':
+                continue
+            spoticli.current_uri = [ fav.uri for fav in spoticli.favs if fav.name == podcast ][0]
+            spoticli.play(spoticli.dev_id, spoticli.current_uri)
+        if cmd == 'artists':
+            choices = [ fav.name for fav in spoticli.favs if fav.type == 'artist' ]
+            choices.append('exit')
+            artist = questionary.select("Select an artist", choices=choices).ask()
+            if podcast == 'exit':
+                continue
+            spoticli.current_uri = [ fav.uri for fav in spoticli.favs if fav.name == artist ][0]
+            spoticli.play(spoticli.dev_id, spoticli.current_uri)
+        if cmd == 'albums':
+            choices = [ fav.name for fav in spoticli.favs if fav.type == 'album' ]
+            choices.append('exit')
+            album = questionary.select("Select an album", choices=choices).ask()
+            if album == 'exit':
+                continue
+            spoticli.current_uri = [ fav.uri for fav in spoticli.favs if fav.name == album ][0]
+            spoticli.play(spoticli.dev_id, spoticli.current_uri)
+        if cmd == 'playlists':
+            choices = [ fav.name for fav in spoticli.favs if fav.type == 'playlist' ]
+            choices.append('exit')
+            playlist = questionary.select("Select a playlist", choices=choices).ask()
+            if playlist == 'exit':
+                continue
+            spoticli.current_uri = [ fav.uri for fav in spoticli.favs if fav.name == playlist ][0]
+            spoticli.play(spoticli.dev_id, spoticli.current_uri)
+        if cmd == 'play':
+            spoticli.play(spoticli.dev_id, spoticli.current_uri)
+        if cmd == 'pause':
+            spoticli.pause(spoticli.dev_id)
+        if cmd == 'next':
+            spoticli.next(spoticli.dev_id)
+        if cmd == 'previous':
+            spoticli.previous(spoticli.dev_id)
+
+        
 
 if __name__ == '__main__':
     main()
