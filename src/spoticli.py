@@ -55,7 +55,6 @@ class Spoticli:
         except Exception as e:
             print(f"Error connecting to Spotify: {e}")
 
-    
     def load_config(self):
         try:
             with open('config.yaml') as file:
@@ -115,6 +114,7 @@ class Spoticli:
         return None
     
     def load_user_playlists(self):
+        """ Load user playlists, albums, podcasts and episodes"""
         playlists = self.sp.current_user_playlists()
         for i, item in enumerate(playlists['items']):
             fav = Favourite(name=item['name'], type='playlist', uri=item['uri'], external_url=item['external_urls']['spotify'], description='')
@@ -128,7 +128,6 @@ class Spoticli:
             fav = Favourite(name=item['show']['name'], type='podcast', uri=item['show']['uri'], external_url=item['show']['external_urls']['spotify'], description=item['show']['description'])
             self.favs.append(fav)
         
-
     def get_current_user_saved_albums(self, lmit=10):
         return self.sp.current_user_saved_albums(limit=lmit)
     
@@ -178,37 +177,33 @@ class Spoticli:
     def search(self, args):
         category  = args[0]
         search = ' '.join(args[1:])
-        result = self.search_uri_by_name(search, 'artist,track,album,episode,show')        
-
+        
+        results = []
         if category == 'artist':
-            print(f"Artists") if result['artists']['items'] else None    
-            for item in result['artists' ]['items']:
-                print('\t ' + item['name'] + ' - ' + item['uri'])
-                pyperclip.copy(item['uri'])
-                
+            result = self.search_uri_by_name(search, 'artist', limit=10)
+            for item in result['artists']['items']:
+                results.append(Favourite(name=item['name'], type='artist', uri=item['uri'], external_url='unknown', description=''))
         if category == 'album':
-            print(f"Albums") if result['albums']['items'] else None
-            for item in result['albums' ]['items']:
-                print('\t ' + item['name'] + ' - ' + item['uri'])            
-                pyperclip.copy(item['uri'])
-
+            result = self.search_uri_by_name(search, 'album,track,artist,episode,show', limit=5)
+            for item in result['albums']['items']:
+                results.append(Favourite(name=item['name'], type='album', uri=item['uri'], external_url='unknown', description=''))
         if category == 'track':
-            print(f"Tracks") if result['tracks']['items'] else None
-            for item in result['tracks' ]['items']:
-                print('\t ' + item['name'] + ' - ' + item['uri'])
-                pyperclip.copy(item['uri'])
-        
-        if category == 'show' or category == 'podcast':
-            print(f"Shows") if result['shows']['items'] else None
-            for item in result['shows' ]['items']:
-                print('\t ' + item['name'] + ' - ' + item['uri'])
-                pyperclip.copy(item['uri'])
-        
+            result = self.search_uri_by_name(search, 'track', limit=20 )
+            for item in result['tracks']['items']:
+                results.append(Favourite(name=item['name'], type='track', uri=item['uri'], external_url='unknown', description=''))
+        if category == 'podcast':
+            result = self.search_uri_by_name(search, 'show', limit=10 )
+            for item in result['shows']['items']:
+                results.append(Favourite(name=item['name'], type='podcast', uri=item['uri'], external_url='unknown', description=''))
         if category == 'episode':
-            print(f"Episodes") if result['episodes']['items'] else None
-            for item in result['episodes' ]['items']:
-                print('\t ' + item['name'] + ' - ' + item['uri'])
-                pyperclip.copy(item['uri'])
+            result = self.search_uri_by_name(search, 'episode', limit=50)
+            for item in result['episodes']['items']:
+                results.append(Favourite(name=item['name'], type='episode', uri=item['uri'], external_url='unknown', description=''))
+
+        questionary.checkbox(
+            "Select a result",
+            choices=[ fav.name for fav in results ]
+        ).ask()
 
 def ask_root_command(**kwargs):
     question = questionary.autocomplete(
