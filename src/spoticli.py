@@ -35,6 +35,7 @@ class Spoticli:
     sp : spotipy.Spotify
     current_uri: str
     dev_id: str
+    current_volume = 10
 
     def __init__(self) -> spotipy.Spotify:
         self.load_config()
@@ -163,59 +164,51 @@ class Spoticli:
         type = 'show' if type == 'podcast' else type
         return self.sp.search(q=name, limit=limit, type=type)
     
-    def handle_command(self, args):
-        command = args[0]
+    def volume(self, dev_id, volume):
+        self.sp.volume(volume, device_id=dev_id)
 
-        if command == 'play':
-            if pyperclip.paste() != '':
-                self.current_uri = pyperclip.paste()
-            self.play(self.dev_id, self.current_uri)
-        elif command == 'pause':
-            self.pause(self.dev_id)
-        elif command == 'next':
-            self.next(self.dev_id)
-        elif command == 'previous':
-            self.previous(self.dev_id)                        
-        elif command == 'playlists':
-            playlists = self.get_current_user_playlists()
-            for i, item in enumerate(playlists['items']):
-                print("%d %s" % (i, item['name']))
+    def volume_up(self, dev_id, increment=10):
+        self.current_volume += increment
+        self.volume(dev_id, self.current_volume)
 
-        elif command == 'search':
-            # concat the search string
-            category  = args[1]
-            search = ' '.join(args[2:])
-            result = self.search_uri_by_name(search, 'artist,track,album,episode,show')        
+    def volume_down(self, dev_id, decrement=10):
+        self.current_volume -= decrement
+        self.volume(dev_id, self.current_volume)
+    
+    def search(self, args):
+        category  = args[0]
+        search = ' '.join(args[1:])
+        result = self.search_uri_by_name(search, 'artist,track,album,episode,show')        
 
-            if category == 'artist':
-                print(f"Artists") if result['artists']['items'] else None    
-                for item in result['artists' ]['items']:
-                    print('\t ' + item['name'] + ' - ' + item['uri'])
-                    pyperclip.copy(item['uri'])
-                    
-            if category == 'album':
-                print(f"Albums") if result['albums']['items'] else None
-                for item in result['albums' ]['items']:
-                    print('\t ' + item['name'] + ' - ' + item['uri'])            
-                    pyperclip.copy(item['uri'])
+        if category == 'artist':
+            print(f"Artists") if result['artists']['items'] else None    
+            for item in result['artists' ]['items']:
+                print('\t ' + item['name'] + ' - ' + item['uri'])
+                pyperclip.copy(item['uri'])
+                
+        if category == 'album':
+            print(f"Albums") if result['albums']['items'] else None
+            for item in result['albums' ]['items']:
+                print('\t ' + item['name'] + ' - ' + item['uri'])            
+                pyperclip.copy(item['uri'])
 
-            if category == 'track':
-                print(f"Tracks") if result['tracks']['items'] else None
-                for item in result['tracks' ]['items']:
-                    print('\t ' + item['name'] + ' - ' + item['uri'])
-                    pyperclip.copy(item['uri'])
-            
-            if category == 'show' or category == 'podcast':
-                print(f"Shows") if result['shows']['items'] else None
-                for item in result['shows' ]['items']:
-                    print('\t ' + item['name'] + ' - ' + item['uri'])
-                    pyperclip.copy(item['uri'])
-            
-            if category == 'episode':
-                print(f"Episodes") if result['episodes']['items'] else None
-                for item in result['episodes' ]['items']:
-                    print('\t ' + item['name'] + ' - ' + item['uri'])
-                    pyperclip.copy(item['uri'])
+        if category == 'track':
+            print(f"Tracks") if result['tracks']['items'] else None
+            for item in result['tracks' ]['items']:
+                print('\t ' + item['name'] + ' - ' + item['uri'])
+                pyperclip.copy(item['uri'])
+        
+        if category == 'show' or category == 'podcast':
+            print(f"Shows") if result['shows']['items'] else None
+            for item in result['shows' ]['items']:
+                print('\t ' + item['name'] + ' - ' + item['uri'])
+                pyperclip.copy(item['uri'])
+        
+        if category == 'episode':
+            print(f"Episodes") if result['episodes']['items'] else None
+            for item in result['episodes' ]['items']:
+                print('\t ' + item['name'] + ' - ' + item['uri'])
+                pyperclip.copy(item['uri'])
 
 def ask_root_command(**kwargs):
     question = questionary.autocomplete(
@@ -226,11 +219,12 @@ def ask_root_command(**kwargs):
                 "playlists": "select and play your favorite playlists",
                 "artists": "select and play your favorite artists",
                 "albums": "select and play your favorite albums",
-                "search": "search for your favorite songs",
+                "search track,album,artist,podcast,episode": "search for your favorite songs",
                 "play": "play the current song",
                 "pause": "pause the current song",
                 "previous": "play the previous song",
                 "next": "play the next song",
+                "+/-": "volume up/down"
             },
         choices=[
             "podcats",
@@ -242,6 +236,7 @@ def ask_root_command(**kwargs):
             "pause",
             "previous",
             "next",
+            "+/-"
         ],
         ignore_case=False,
         style=None,
@@ -273,6 +268,9 @@ def main():
         cmd = ask_root_command().ask()
         if cmd == 'exit':
             break
+        if cmd == 'search':
+            args = prompt("Search for: ").split()
+            spoticli.search(args)
         if cmd == 'podcats':
             choices = [ fav.name for fav in spoticli.favs if fav.type == 'podcast' ]
             choices.append('exit')
@@ -314,8 +312,10 @@ def main():
             spoticli.next(spoticli.dev_id)
         if cmd == 'previous':
             spoticli.previous(spoticli.dev_id)
-
-        
+        if cmd == '+':
+            spoticli.volume_up(spoticli.dev_id)
+        if cmd == '-':
+            spoticli.volume_down(spoticli.dev_id)
 
 if __name__ == '__main__':
     main()
