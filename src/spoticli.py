@@ -200,16 +200,24 @@ class Spoticli:
             for item in result['episodes']['items']:
                 results.append(Favourite(name=item['name'], type='episode', uri=item['uri'], external_url='unknown', description=''))
 
-        questionary.checkbox(
+        selected = questionary.checkbox(
             "Select a result",
             choices=[ fav.name for fav in results ]
         ).ask()
+        
+        # add the multi-selected results to the favs list
+        for select in selected:
+            for fav in results:
+                if select == fav.name:
+                    self.favs.append(fav)
+                    break            
 
-def ask_root_command(**kwargs):
+
+def ask_root_command(choices, **kwargs):
     question = questionary.autocomplete(
         "Spotify-cli>",
         validate=None,
-        meta_information=  {
+        meta_information =  {
                 "podcats": "select and play your favorite podcats",
                 "playlists": "select and play your favorite playlists",
                 "artists": "select and play your favorite artists",
@@ -221,29 +229,7 @@ def ask_root_command(**kwargs):
                 "next": "play the next song",
                 "+/-": "volume up/down"
             },
-        choices=[
-            "podcats",
-            "playlists",
-            "artists",
-            "albums",
-            "search",
-            "play",
-            "pause",
-            "previous",
-            "next",
-            "+/-"
-        ],
-        ignore_case=False,
-        style=None,
-        **kwargs,
-    )    
-    return question
-
-def ask_podcast_command(choices, **kwargs):
-    question = questionary.autocomplete(
-        "Select a f{}",
-        validate=None,
-        choices=choices,
+        choices=choices,          
         ignore_case=False,
         style=None,
         **kwargs,
@@ -260,13 +246,17 @@ def main():
     spoticli.load_user_playlists()
 
     while True:
-        cmd = ask_root_command().ask()
-        if cmd == 'exit':
+        choices = ['search', 'podcats', 'artists', 'albums', 'playlists', 'exit']    
+        for fav in spoticli.favs:
+            choices += (fav.name,)
+
+        cmd = ask_root_command(choices).ask()
+        if cmd == 'exit' or cmd == "quit" or cmd == "q" or cmd == "e":
             break
-        if cmd == 'search':
+        elif cmd == 'search':
             args = prompt("Search for: ").split()
             spoticli.search(args)
-        if cmd == 'podcats':
+        elif cmd == 'podcats':
             choices = [ fav.name for fav in spoticli.favs if fav.type == 'podcast' ]
             choices.append('exit')
             description = [ fav.description for fav in spoticli.favs if fav.type == 'podcast' ]
@@ -275,7 +265,7 @@ def main():
                 continue
             spoticli.current_uri = [ fav.uri for fav in spoticli.favs if fav.name == podcast ][0]
             spoticli.play(spoticli.dev_id, spoticli.current_uri)
-        if cmd == 'artists':
+        elif cmd == 'artists':
             choices = [ fav.name for fav in spoticli.favs if fav.type == 'artist' ]
             choices.append('exit')
             artist = questionary.select("Select an artist", choices=choices).ask()
@@ -283,7 +273,7 @@ def main():
                 continue
             spoticli.current_uri = [ fav.uri for fav in spoticli.favs if fav.name == artist ][0]
             spoticli.play(spoticli.dev_id, spoticli.current_uri)
-        if cmd == 'albums':
+        elif cmd == 'albums':
             choices = [ fav.name for fav in spoticli.favs if fav.type == 'album' ]
             choices.append('exit')
             album = questionary.select("Select an album", choices=choices).ask()
@@ -291,7 +281,7 @@ def main():
                 continue
             spoticli.current_uri = [ fav.uri for fav in spoticli.favs if fav.name == album ][0]
             spoticli.play(spoticli.dev_id, spoticli.current_uri)
-        if cmd == 'playlists':
+        elif cmd == 'playlists':
             choices = [ fav.name for fav in spoticli.favs if fav.type == 'playlist' ]
             choices.append('exit')
             playlist = questionary.select("Select a playlist", choices=choices).ask()
@@ -299,18 +289,25 @@ def main():
                 continue
             spoticli.current_uri = [ fav.uri for fav in spoticli.favs if fav.name == playlist ][0]
             spoticli.play(spoticli.dev_id, spoticli.current_uri)
-        if cmd == 'play':
+        elif cmd == 'play' or cmd == 'p':
             spoticli.play(spoticli.dev_id, spoticli.current_uri)
-        if cmd == 'pause':
+        elif cmd == 'pause':
             spoticli.pause(spoticli.dev_id)
-        if cmd == 'next':
+        elif cmd == 'next' or cmd == 'n':
             spoticli.next(spoticli.dev_id)
-        if cmd == 'previous':
+        elif cmd == 'previous' or cmd == 'prev':
             spoticli.previous(spoticli.dev_id)
-        if cmd == '+':
+        elif cmd == '+':
             spoticli.volume_up(spoticli.dev_id)
-        if cmd == '-':
+        elif cmd == '-':
             spoticli.volume_down(spoticli.dev_id)
+        else:
+            for fav in spoticli.favs:
+                if fav.name == cmd:
+                    spoticli.current_uri = fav.uri
+                    spoticli.play(spoticli.dev_id, spoticli.current_uri)
+                    break
+
 
 if __name__ == '__main__':
     main()
