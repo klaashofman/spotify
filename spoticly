@@ -1,0 +1,5 @@
+SPOTICLI_PATH="$HOME/Development/Rimshot/sandbox/python/spoticli"
+cd $SPOTICLI_PATH
+source .venv/bin/activate
+python src/spoticli.py
+cd -
