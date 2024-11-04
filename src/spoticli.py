@@ -2,12 +2,10 @@ from dataclasses import dataclass
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import yaml
-import readline
 import pyperclip
 import questionary
-from questionary import prompt, Validator, ValidationError
-from prompt_toolkit import prompt
-
+from questionary import Validator, ValidationError
+from questionary import prompt
 
 # FAQ: finding spotify URI's and ID's
 # https://developer.spotify.com/documentation/web-api/concepts/spotify-uris-ids
@@ -175,6 +173,9 @@ class Spoticli:
         self.volume(dev_id, self.current_volume)
     
     def search(self, args):
+        if len(args) < 2:
+            return
+        
         category  = args[0]
         search = ' '.join(args[1:])
         
@@ -212,11 +213,31 @@ class Spoticli:
                     self.favs.append(fav)
                     break            
 
+class CommandCompleter(Validator):
+    def validate(self, document):
+        if "search" in document.text:
+            # find the list of categories in the text
+            [category] = [ word for word in document.text.split() if word in ['artist', 'podcast', 'album', 'track', 'episode'] ]
+            if [ "artist", "podcast", "album"] in document.text:
+                return True
+            else :
+                raise ValidationError(
+                    message="Please choose a category: artist, podcast, album",
+                    cursor_position=len(document.text),
+            )
+            
+
+        # if ok:
+        #     raise ValidationError(
+        #         message="Please choose a Polyergus Ant",
+        #         cursor_position=len(document.text),
+        # )  # Move cursor to end
+       
 
 def ask_root_command(choices, **kwargs):
     question = questionary.autocomplete(
-        "Spotify-cli>",
-        validate=None,
+        "Spoticli>",
+        validate=CommandCompleter,
         meta_information =  {
                 "podcats": "select and play your favorite podcats",
                 "playlists": "select and play your favorite playlists",
@@ -250,11 +271,17 @@ def main():
         for fav in spoticli.favs:
             choices += (fav.name,)
 
-        cmd = ask_root_command(choices).ask()
+        args = ask_root_command(choices).ask().split()
+        try:
+            cmd = args[0]
+            args = args[1:]
+        except TypeError:
+            continue
+
         if cmd == 'exit' or cmd == "quit" or cmd == "q" or cmd == "e":
             break
         elif cmd == 'search':
-            args = prompt("Search for: ").split()
+            # pass the second argument
             spoticli.search(args)
         elif cmd == 'podcats':
             choices = [ fav.name for fav in spoticli.favs if fav.type == 'podcast' ]
